@@ -1,0 +1,117 @@
+# ============================================================
+#  SafeEat AI (TozaRasion) — Render Blueprint
+#  Hujjat: https://render.com/docs/blueprint-spec
+#
+#  Bu fayl quyidagilarni yaratadi:
+#    safeeat-db   → PostgreSQL (bepul tarif)
+#    safeeat-api  → FastAPI backend (Docker, bepul web service)
+#    safeeat-web  → Telegram Mini App (static site, bepul)
+#
+#  `sync: false` bilan belgilangan sirlar (BOT_TOKEN, API kalitlar)
+#  Blueprint'ni qo'llash paytida Render Dashboard'da so'raladi.
+#
+#  ⚠️  MUHIM: pastdagi `*.onrender.com` manzillari xizmat nomlaridan
+#      kelib chiqadi. Agar Render nom bandligi uchun boshqa manzil
+#      bersa (masalan `safeeat-api-xyz.onrender.com`), shu fayldagi
+#      barcha manzillarni yangilab qayta deploy qiling.
+# ============================================================
+
+databases:
+  - name: safeeat-db
+    databaseName: safeeat
+    user: safeeat
+    plan: free
+    # API bilan BIR XIL regionda bo'lishi shart (private network uchun).
+    # Xato bersa, ikkalasini ham `oregon` ga o'zgartiring.
+    region: frankfurt
+
+services:
+  # ---------------- Backend (FastAPI) ----------------
+  - type: web
+    name: safeeat-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: ./apps/api
+    # Render portni $PORT orqali beradi
+    dockerCommand: sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    # Har deploy'dan oldin migratsiyalar
+    preDeployCommand: alembic upgrade head
+    # Faqat birinchi muvaffaqiyatli deploy'dan keyin (E-qo'shimchalar katalogi)
+    initialDeployHook: python -m app.db.seed
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      # Render bergan ichki PostgreSQL manzili.
+      # (config.py `postgresql://` ni `postgresql+asyncpg://` ga o'giradi)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: safeeat-db
+          property: connectionString
+      # Yuklangan rasmlar uchun to'liq URL (o'zining tashqi manzili)
+      - key: API_PUBLIC_URL
+        fromService:
+          name: safeeat-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      # Mini App manzili (safeeat-web bilan bir xil bo'lishi kerak)
+      - key: WEBAPP_URL
+        value: https://safeeat-web.onrender.com
+      - key: CORS_ORIGINS
+        value: https://safeeat-web.onrender.com
+      - key: JWT_SECRET
+        generateValue: true
+      - key: BOT_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: AI_PROVIDER_ORDER
+        value: openai,gemini
+      # `local` — vaqtinchalik disk (DEPLOY.md dagi cheklovga qarang)
+      - key: STORAGE_BACKEND
+        value: local
+      - key: LOCAL_STORAGE_DIR
+        value: uploads
+
+  # ---------------- Frontend (Telegram Mini App) ----------------
+  - type: web
+    name: safeeat-web
+    runtime: static
+    rootDir: apps/web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      # Build vaqtida JS ichiga "singdiriladi" — backend manzili
+      - key: VITE_API_BASE_URL
+        value: https://safeeat-api.onrender.com
+    # SPA (react-router) uchun barcha yo'llar index.html'ga
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # ---------------- Bot (ixtiyoriy, pulli) ----------------
+  # Bepul tarifda background worker YO'Q. Bepul variantlar DEPLOY.md'da.
+  # Pulli worker (~$7/oy) kerak bo'lsa quyidagi blokni izohdan chiqaring:
+  #
+  # - type: worker
+  #   name: safeeat-bot
+  #   runtime: docker
+  #   plan: 0.5c-512mb
+  #   region: frankfurt
+  #   dockerfilePath: ./apps/api/Dockerfile
+  #   dockerContext: ./apps/api
+  #   dockerCommand: python -m app.bot.main
+  #   envVars:
+  #     - key: ENV
+  #       value: development          # long-polling rejimi (webhook emas)
+  #     - key: WEBAPP_URL
+  #       value: https://safeeat-web.onrender.com
+  #     - key: BOT_TOKEN
+  #       sync: false
