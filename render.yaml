@@ -37,7 +37,7 @@ services:
     # ⚠️ Bepul tarifda `preDeployCommand`/`initialDeployHook` qo'llab-quvvatlanmaydi,
     # shuning uchun migratsiya va seed start buyruqida bajariladi.
     # (seed idempotent — har qayta ishga tushirishda xavfsiz)
-    dockerCommand: sh -c "alembic upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    dockerCommand: alembic upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/v1/health
     envVars:
       - key: ENV
