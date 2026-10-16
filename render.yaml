@@ -34,12 +34,10 @@ services:
     region: frankfurt
     dockerfilePath: ./apps/api/Dockerfile
     dockerContext: ./apps/api
-    # Render portni $PORT orqali beradi
-    dockerCommand: sh -c "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-    # Har deploy'dan oldin migratsiyalar
-    preDeployCommand: alembic upgrade head
-    # Faqat birinchi muvaffaqiyatli deploy'dan keyin (E-qo'shimchalar katalogi)
-    initialDeployHook: python -m app.db.seed
+    # ⚠️ Bepul tarifda `preDeployCommand`/`initialDeployHook` qo'llab-quvvatlanmaydi,
+    # shuning uchun migratsiya va seed start buyruqida bajariladi.
+    # (seed idempotent — har qayta ishga tushirishda xavfsiz)
+    dockerCommand: sh -c "alembic upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /api/v1/health
     envVars:
       - key: ENV
